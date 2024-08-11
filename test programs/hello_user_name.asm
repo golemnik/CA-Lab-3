@@ -1,8 +1,8 @@
-#msg1 data W h a t _ i s _ y o u r _ n a m e ? 0
-#msg2 data H e l l o , _ 0
-#msg3 data ! 0
+#msg1 data W h a t \s i s \s y o u r \s n a m e ? \0
+#msg2 data H e l l o , \s \0
+#msg3 data ! \0
 #addr_user data #user
-#user data 0
+#user data \0
 
 push #start         | _ -> #start
 jmp                 | -> _
