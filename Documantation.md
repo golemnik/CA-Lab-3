@@ -59,5 +59,8 @@ Ports:\
 - **ret**
   - a s -> _
   - returns from interrupt to program and allows restore interruptable state
+- **or**
+  - n1 n2 -> n3
+  - make bitwise or between n1 and n2
 - **hlt**
   - stops program
