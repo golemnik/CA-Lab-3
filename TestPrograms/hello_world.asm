@@ -1,4 +1,4 @@
-#msg1 data h e l l o _ w o r l d 0
+#msg1 data h e l l o _ w o r l d \0
 
 push #start         | _ -> #start
 jmp                 | -> _
