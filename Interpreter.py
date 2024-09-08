@@ -1,17 +1,36 @@
+import json
+from enum import Enum
+
+from Processor.DataMemory import DataMemory
+from Processor.InstrMemory import InstrMemory
 from ProgramingLanguage.Command import Command
 from ProgramingLanguage.DataToken import DataToken
 
 
-class Interpeter:
+# RS means Row State - shortened to compact fsm define in phase III
+class RS(Enum):
+    STR_Begin = -1
+    LabelRow = 0
+    DataPlace = 1
+    Instruction = 2
+    C_String_List = 3
+    Integer = 4
+    LabelAddr = 5
+    NoArg = 6
+    Comment = 7
+    STR_End = -2
+
+
+class Compiler:
     def __init__(self):
+        self.file_name = None
         self.tokens = []
 
         self.data_tokens: list[DataToken] = []
 
+        self.label_list: dict[str: int] = {}
         self.instr_mem_dump: list[Command] = []
         self.data_mem_dump: list[int] = []
-        self.data_labels_list: dict[str: int] = {}
-        self.instr_labels_list: dict[str: int] = {}
 
     def phase_I_tokens(self, file_name):
         code = open(file_name, 'r')
@@ -19,8 +38,9 @@ class Interpeter:
             for token in line.split():
                 self.tokens.append(token)
             self.tokens.append("\n")
+        self.file_name = file_name
 
-    def phase_II_interpretate(self):
+    def phase_II_compile(self):
         bool_data = False
         bool_comment = False
         bool_arg = False
@@ -72,14 +92,14 @@ class Interpeter:
             data_token.instr = token
             bool_arg = True
 
-    def phase_III_export_dumps(self):
+    def phase_III_extract_dumps(self):
         addr_data = 0
         addr_instr = 0
         for token in self.data_tokens:
             if token.label != "" and token.data != "":
-                self.data_labels_list.update({token.label: addr_data})
+                self.label_list.update({token.label: addr_data})
             elif token.label != "":
-                self.instr_labels_list.update({token.label: addr_instr})
+                self.label_list.update({token.label: addr_instr})
             if token.data != "":
                 for data in token.data:
                     self.data_mem_dump.append(ord(data))
@@ -90,13 +110,102 @@ class Interpeter:
                 self.instr_mem_dump.append(command)
                 addr_instr += 1
 
-        # for com in self.instr_mem_dump:
-        #     if com.arg != "" and com.arg[0] == '#':
-        #         if self.data_labels_list.get(com.arg) is not None:
-        #             com.arg = self.data_labels_list.get(com.arg)
-        #             com.dm_flag = True
-        #         else:
-        #             com.arg = self.instr_labels_list.get(com.arg)
+        for com in self.instr_mem_dump:
+            if com.arg != "" and com.arg[0] == '#':
+                if self.label_list.get(com.arg) is not None:
+                    com.arg = self.label_list.get(com.arg)
+                else:
+                    print(f"Label <{com.arg}> used but not spotted")
+                    exit(-1)
 
-    def phase_IV_export_instr(self):
-        pass
+    def phase_III_extract(self):
+        addr_data = 0
+        addr_instr = 0
+
+        fsm_list = {'label': RS.LabelRow,
+                    'instr': RS.Instruction,
+                    'data': RS.DataPlace,
+                    'str': RS.C_String_List,
+                    'int': RS.Integer,
+                    'label_addr': RS.LabelAddr,
+                    'no_arg': RS.NoArg,
+                    'com': RS.Comment,
+                    'end': RS.STR_End
+                    }
+
+        fsm = {
+            'initial': RS.STR_Begin,
+            'state': [],
+            'transitions': {
+                RS.STR_Begin: {'label': RS.LabelRow, 'instr': RS.Instruction},
+                RS.LabelRow: {'data': RS.DataPlace, 'instr': RS.Instruction},
+                RS.DataPlace: {'str': RS.C_String_List, 'int': RS.Integer, 'label_addr': RS.LabelAddr, 'no_arg': RS.NoArg},
+                RS.Instruction: {'int': RS.Integer, 'label_addr': RS.LabelAddr, 'no_arg': RS.NoArg},
+                RS.C_String_List: {'com': RS.Comment, 'end': RS.STR_End},
+                RS.Integer: {'com': RS.Comment, 'end': RS.STR_End},
+                RS.LabelAddr: {'com': RS.Comment, 'end': RS.STR_End},
+                RS.NoArg: {'com': RS.Comment, 'end': RS.STR_End},
+                RS.Comment: {'end': RS.STR_End},
+                RS.STR_End: {}
+            }
+        }
+
+        row_counter = 1
+        for token in self.data_tokens:
+            state = []
+            if token.label != "":
+                state.append("label")
+
+            if token.data != "":
+                state.append("data")
+            if token.data != "" and token.data[0] == '#':
+                state.append("label_addr")
+            elif token.data != "" and token.data[len(token.data)-1] == '\0':
+                state.append("str")
+            elif token.data != "" and token.data[len(token.data)-1] != '\0':
+                state.append("int")
+
+            if token.instr != "":
+                state.append("instr")
+
+            if token.arg == "" and token.data == "":
+                state.append("no_arg")
+            elif token.arg != "" and token.arg[0] == "#":
+                state.append("label_addr")
+            elif token.arg != "" and token.arg[len(token.arg)-1] != '\0':
+                state.append("int")
+
+            if token.comment != "":
+                state.append("com")
+            state.append("end")
+            print(state)
+
+            fsm['state'] = fsm['initial']
+            counter = 0
+            while fsm['state'] != RS.STR_End:
+                if state[counter] in fsm['transitions'][fsm['state']]:
+                    fsm['state'] = fsm['transitions'][fsm['state']][state[counter]]
+                    counter += 1
+                else:
+                    print(f"\n"
+                          f"Incorrect state:\n"
+                          f"Current state: {fsm['state']}\n"
+                          f"Expected: {fsm['transitions'][fsm['state']]}\n"
+                          f"Wanted to: {fsm_list[state[counter]]}\n"
+                          f"Broken row: {row_counter}\n")
+                    exit(-1)
+            row_counter += 1
+
+    def phase_IV_export_dumps(self):
+        dm = DataMemory()
+        im = InstrMemory()
+
+        dm.set_memory_dump(self.data_mem_dump)
+        im.set_memory_dump(self.instr_mem_dump)
+
+        with open('Data_dump.json', 'w', encoding='utf-8') as f:
+            json.dump(dm.__dict__, f, ensure_ascii=False, indent=4)
+        with open('Instr_dump.json', 'w', encoding='utf-8') as f:
+            json.dump(im.__dict__(), f, ensure_ascii=False, indent=4)
+
+
